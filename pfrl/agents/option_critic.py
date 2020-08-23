@@ -5,6 +5,21 @@ import torch.nn as nn
 from torch.distributions import Categorical, Bernoulli
 
 class OptionCriticNetwork(nn.Module):
+    """Option Critic Network
+
+    This class is used to instantiate the Option Critic Architecture.
+
+    Args:
+        featureNetwork (torch.nn.Module): Network to convert from state to features
+        terminationNetwork (torch.nn.Module): Network to determine termination probs
+        QNetwork (torch.nn.Module): Network to calculate Q-Value
+        feature_output_size (int): size of feature vector outputted by featureNetwork
+        device (string): device to put network on
+        eps_start (float): starting epsilon
+        eps_min (float): minimum epsilon
+        eps_decay (int): decay rate for epsilon
+
+    """
     def __init__(self, featureNetwork, terminationNetwork, QNetwork, feature_output_size, device='cpu',
                  eps_start = 1.0, eps_min = 0.1, eps_decay = int(1e6)):
         super(OptionCriticNetwork, self).__init__()
@@ -23,14 +38,17 @@ class OptionCriticNetwork(nn.Module):
         self.to(device)
 
     def get_state(self, obs):
+        """Convert state to features."""
         obs = obs.to(self.device)
         state = self.features(obs)
         return state
 
     def get_Q(self, state):
+        """Get Q value from state."""
         return self.Q(state)
 
     def predict_option_termination(self, state, current_option):
+        """Predict whether option will terminate, return (termination, next option)."""
         termination = self.terminations(state)[:, current_option].sigmoid()
         option_termination = Bernoulli(termination).sample()
 
@@ -39,9 +57,11 @@ class OptionCriticNetwork(nn.Module):
         return bool(option_termination.item()), next_option.item()
 
     def get_terminations(self, state):
+        """Get termination probabilities."""
         return self.terminations(state).sigmoid()
 
     def get_action(self, state, option):
+        """Get action based on state and current option."""
         logits = state @ self.options_W[option] + self.options_b[option]
         action_dist = logits.softmax(dim=-1)
         action_dist = Categorical(action_dist)
@@ -53,11 +73,13 @@ class OptionCriticNetwork(nn.Module):
         return action.item(), logp, entropy
 
     def greedy_option(self, state):
+        """Get greedy option."""
         Q = self.get_Q(state)
         return Q.argmax(dim=-1).item()
 
     @property
     def epsilon(self):
+        """Return epsilon value"""
         eps = self.eps_min + (self.eps_start - self.eps_min) * exp(-self.num_steps / self.eps_decay)
         self.num_steps += 1
 
