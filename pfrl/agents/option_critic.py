@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Bernoulli
+from pfrl import agent
 
 class OptionCriticNetwork(nn.Module):
     """Option Critic Network
@@ -84,3 +85,21 @@ class OptionCriticNetwork(nn.Module):
         self.num_steps += 1
 
         return eps
+
+class OC(agent.Agent):
+    """Option Critic Architecture
+
+    Args:
+        oc (OptionCriticNetwork): Option Critic Network
+        optimizer (Optimizer): Already set up optimizer
+
+    """
+
+    def __init__(self, oc, optimizer):
+        self.oc = oc
+
+    def act(self, obs):
+        print(obs)
+
+    def observe(self, obs, reward, done, reset):
+        print(reward)
