@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import random
+from math import exp
 from torch.distributions import Categorical, Bernoulli
 from pfrl import agent
 from copy import deepcopy
@@ -39,6 +41,8 @@ class OptionCriticNetwork(nn.Module):
         self.Q = QNetwork
         self.options_W = nn.Parameter(torch.zeros(num_options, feature_output_size, num_actions))
         self.options_b = nn.Parameter(torch.zeros(num_options, num_actions))
+
+        self.device = device
 
         self.to(device)
 
@@ -100,8 +104,8 @@ class OC(agent.Agent):
     """
 
     def __init__(
-        self, 
-        oc, 
+        self,
+        oc,
         optimizer,
         num_options
     ):
@@ -120,12 +124,22 @@ class OC(agent.Agent):
         if self.option_termination:
             epsilon = self.oc.epsilon
             greedy_option = self.oc.greedy_option(state)
-            self.option = np.random.choice(self.num_options) if random.rand() < epsilon else 
-        
+            self.option = np.random.choice(self.num_options) if np.random.rand() < epsilon else greedy_option
         action, logp, entropy = self.oc.get_action(state, self.option)
 
+        return action
+
     def observe(self, obs, reward, done, reset):
-        print(reward)
+        return
+
+    def load(self):
+        return
+
+    def save(self):
+        return
+
+    def get_statistics(self):
+        return
 
     def actor_loss_fn(self):
         return 0
