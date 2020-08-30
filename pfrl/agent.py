@@ -8,6 +8,7 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
+from pfrl.utils import subgoal
 
 import torch
 import numpy as np
@@ -83,7 +84,7 @@ class HRLAgent(Agent, metaclass=ABCMeta):
     training = True
 
     @abstractmethod
-    def act_high_level(self, obs: Any, goal: Any):
+    def act_high_level(self, obs: Any, goal: Any, subgoal: Any):
         """
         high level controller act method
         """
@@ -96,13 +97,13 @@ class HRLAgent(Agent, metaclass=ABCMeta):
         """
         pass
 
-    @abstractmethod
-    def act(self, obs: Any, goal: Any):
-        """
-        Selects an action,
-        based on a goal and observation.
-        """
-        pass
+    # @abstractmethod
+    # def act(self, obs: Any, goal: Any):
+    #     """
+    #     Selects an action,
+    #     based on a goal and observation.
+    #     """
+    #     pass
 
     def act(self, obs: Any) -> Any:
         """Select an action, based on an
@@ -113,15 +114,14 @@ class HRLAgent(Agent, metaclass=ABCMeta):
         """
         raise NotImplementedError()
 
+    # def act(self, obs: Any, goal: Any) -> Any:
+    #     """Select an action, based on a goal
+    #     and observation.
 
-    def act(self, obs: Any, goal: Any) -> Any:
-        """Select an action, based on a goal
-        and observation.
-
-        Returns:
-            ~object: action
-        """
-        raise NotImplementedError()
+    #     Returns:
+    #         ~object: action
+    #     """
+    #     raise NotImplementedError()
 
     def observe(self, obs: Any, reward: float, done: bool, reset: bool) -> None:
         """Observe consequences of the last action.
@@ -129,32 +129,13 @@ class HRLAgent(Agent, metaclass=ABCMeta):
         Returns:
             None
         """
+        pass
 
     def set_final_goal(self, fg):
         """
         sets the final goal for the agent.
         """
         self.fg = fg
-
-    def train(self, global_step: int) -> Any:
-        """Trains the HRL agent.
-
-        Returns:
-            None
-        """
-        raise NotImplementedError()
-
-    def append(self, step, s, a, n_s, r, d) -> Any:
-        """
-        Appends an experience to the replay buffer
-        """
-        raise NotImplementedError()
-
-    def step(self, s, env, step, global_step=0, explore=False) -> Any:
-        """
-        Take an action and step in the environment.
-        """
-        raise NotImplementedError()
 
     def end_episode(self, episode, logger=None):
         raise NotImplementedError()

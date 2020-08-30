@@ -1,9 +1,11 @@
 import logging
 import os
+from gym.spaces import space
+from gym.spaces.space import Space
+from pfrl.agents.hrl.hiro_agent import HIROAgent
 
 from pfrl.experiments.evaluator import Evaluator
 from pfrl.experiments.evaluator import save_agent
-from pfrl.utils.ask_yes_no import ask_yes_no
 
 
 import os 
@@ -11,12 +13,14 @@ import argparse
 import numpy as np
 import datetime
 import copy
+from pfrl.utils import subgoal
 
 from torch import sub
+from gym import spaces
 
 
 def train_hrl_agent(
-    agent,
+    agent: HIROAgent,
     env,
     steps,
     outdir,
@@ -28,7 +32,8 @@ def train_hrl_agent(
     step_hooks=(),
     logger=None,
     explore=True,
-    start_training_steps=0
+    start_training_steps=100,
+    subgoal=None
 ):
 
     logger = logger or logging.getLogger(__name__)
@@ -36,17 +41,15 @@ def train_hrl_agent(
     episode_r = 0
     episode_idx = 0
 
-    global_step = 0
-    subgoal = None
-    # o_0, r_0
-    obs = env.reset()
+    obs_dict = env.reset()
+    subgoal = subgoal or spaces.Box(-1, 1, (5,))
 
-    fg = obs['desired_goal']
+    fg = obs_dict['desired_goal']
 
-    obs = obs['observation']
+    obs = obs_dict['observation']
     agent.set_final_goal(fg)
 
-    sg = subgoal.action_space.sample()
+    sg = subgoal.sample()
 
     t = step_offset
     if hasattr(agent, "t"):
@@ -65,16 +68,16 @@ def train_hrl_agent(
                 action = agent.act_low_level(obs, sg)
 
             # take a step in the environment
-            obs, r, done, info = env.step(action)
-            n_s = obs['observation']
+            obs_dict, r, done, info = env.step(action)
+            obs = obs_dict['observation']
 
             if explore:
                 if t < start_training_steps:
-                    n_sg = subgoal.action_space.sample()
+                    n_sg = subgoal.sample()
                 else:
-                    n_sg = agent.act_high_level(n_s, fg, t)
+                    n_sg = agent.act_high_level(obs, fg, sg, t)
             else:
-                n_sg = agent.act_high_level(n_s, fg, t)
+                n_sg = agent.act_high_level(obs, fg, sg, t)
 
             t += 1
             episode_r += r
@@ -82,8 +85,8 @@ def train_hrl_agent(
 
             reset = episode_len == max_episode_len or info.get("needs_reset", False)
 
-            agent.observe(n_s, r, done, reset, t, start_training_steps)
-
+            agent.observe(obs, r, done, reset, t, start_training_steps)
+            sg = n_sg
             for hook in step_hooks:
                 hook(env, agent, t)
 
@@ -109,12 +112,11 @@ def train_hrl_agent(
                 episode_r = 0
                 episode_idx += 1
                 episode_len = 0
-                obs = env.reset()
-                fg = obs['desired_goal']
-                s = obs['observation']
+                obs_dict = env.reset()
+                fg = obs_dict['desired_goal']
+                obs = obs_dict['observation']
             if checkpoint_freq and t % checkpoint_freq == 0:
                 save_agent(agent, t, outdir, logger, suffix="_checkpoint")
-
 
     except (Exception, KeyboardInterrupt):
         # Save the current model before being killed
@@ -143,6 +145,7 @@ def train_hrl_agent_with_evaluation(
     save_best_so_far_agent=True,
     use_tensorboard=False,
     logger=None,
+    subgoal=None
 ):
     """Train an agent while periodically evaluating it.
 
@@ -208,6 +211,7 @@ def train_hrl_agent_with_evaluation(
         successful_score=successful_score,
         step_hooks=step_hooks,
         logger=logger,
+        subgoal=subgoal
     )
 
 

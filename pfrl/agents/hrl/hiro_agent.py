@@ -1,5 +1,4 @@
 from typing import Any
-from pfrl.wrappers import render
 import torch
 from torch import nn
 import numpy as np
@@ -17,14 +16,16 @@ from pfrl import explorers
 from pfrl.replay_buffer import high_level_batch_experiences_with_goal
 from pfrl.agents import HIROGoalConditionedTD3
 
-from pfrl.agents.hrl.envs import EnvWithGoal
-from pfrl.agents.hrl.envs.create_maze_env import create_maze_env
-
 
 def _is_update(episode, freq, ignore=0, rem=0):
     if episode != ignore and episode % freq == rem:
         return True
     return False
+
+
+def _mean_or_nan(xs):
+    """Return its mean a non-empty sequence, numpy.nan for a empty one."""
+    return np.mean(xs) if xs else np.nan
 
 # standard controller
 
@@ -144,11 +145,11 @@ class HRLControllerBase():
         """
         self.agent.observe_with_goal(torch.FloatTensor(states), torch.FloatTensor(goals), rewards, done, None)
 
-    def train(self, states, goals, rewards, done, iterations=1):
+    def observe(self, states, goals, rewards, done, iterations=1):
         """
         get data from the replay buffer, and train.
         """
-        return self._train(states, goals, rewards, goals, done)
+        return self._observe(states, goals, rewards, goals, done)
 
 
 # lower controller
@@ -402,20 +403,19 @@ class HIROAgent(HRLAgent):
         self.reward_scaling = reward_scaling
         self.episode_subreward = 0
         self.sr = 0
-        self.fg = np.array([0, 0])
-        self.sg = self.subgoal.action_space.sample()
         self.state_arr = []
         self.action_arr = []
         self.cumulative_reward = 0
 
         self.start_training_steps = start_training_steps
 
-    def act_high_level(self, obs, goal, step=0):
+    def act_high_level(self, obs, goal, subgoal, step=0):
         """
         high level actor
         """
-        n_sg = self._choose_subgoal(step, self.last_obs, self.sg, obs)
+        n_sg = self._choose_subgoal(step, self.last_obs, subgoal, obs, goal)
         self.n_sg = n_sg
+        self.sr = self.low_reward(self.last_obs, subgoal, obs)
 
         return n_sg
 
@@ -434,7 +434,6 @@ class HIROAgent(HRLAgent):
         after getting feedback from the environment, observe,
         and train both the low and high level controllers.
         """
-        self.sr = self.low_reward(self.last_obs, self.sg, obs)
 
         if global_step >= start_training_steps:
             # start training once the global step surpasses
@@ -443,15 +442,15 @@ class HIROAgent(HRLAgent):
 
             # accumulate state and action arr
 
-            if global_step % self.train_freq == 0 and len(self.action_arr) == self.train_freq:
+            if global_step % self.train_freq == 1 and len(self.action_arr) == self.train_freq:
                 # train high level controller every self.train_freq steps
-                self.high_con.observe(self.low_con, self.state_arr, self.action_arr, self.n_sg, self.cumulative_reward, self.fg, obs, done)
+                self.high_con.observe(self.low_con, self.state_arr, self.action_arr, self.cumulative_reward, self.fg, obs, done)
                 self.action_arr = []
                 self.state_arr = []
                 self.cumulative_reward = 0
 
             self.action_arr.append(self.last_action)
-            self.state_arr.append(self.last_ob)
+            self.state_arr.append(self.last_obs)
             self.cumulative_reward += (self.reward_scaling * reward)
 
     def select_subgoal(self, step, s, n_s):
@@ -519,12 +518,12 @@ class HIROAgent(HRLAgent):
         """
         return self.low_con.policy(s, sg)
 
-    def _choose_subgoal(self, step, s, sg, n_s):
+    def _choose_subgoal(self, step, s, sg, n_s, goal):
         """
         chooses the next subgoal for the low level controller.
         """
         if step % self.buffer_freq == 0:
-            sg = self.high_con.policy(s, self.fg)
+            sg = self.high_con.policy(s, goal)
         else:
             sg = self.subgoal_transition(s, sg, n_s)
 
@@ -606,6 +605,25 @@ class HIROAgent(HRLAgent):
         """
         self.low_con.agent.training = False
         self.high_con.agent.training = False
+
+    def get_statistics(self):
+        return [
+            ("low_con_average_q1", _mean_or_nan(self.low_con.agent.q1_record)),
+            ("low_con_average_q2", _mean_or_nan(self.low_con.agent.q2_record)),
+            ("low_con_average_q_func1_loss", _mean_or_nan(self.low_con.agent.q_func1_loss_record)),
+            ("low_con_average_q_func2_loss", _mean_or_nan(self.low_con.agent.q_func2_loss_record)),
+            ("low_con_average_policy_loss", _mean_or_nan(self.low_con.agent.policy_loss_record)),
+            ("low_con_policy_n_updates", self.low_con.agent.policy_n_updates),
+            ("low_con_q_func_n_updates", self.low_con.agent.q_func_n_updates),
+
+            ("high_con_average_q1", _mean_or_nan(self.high_con.agent.q1_record)),
+            ("high_con_average_q2", _mean_or_nan(self.high_con.agent.q2_record)),
+            ("high_con_average_q_func1_loss", _mean_or_nan(self.high_con.agent.q_func1_loss_record)),
+            ("high_con_average_q_func2_loss", _mean_or_nan(self.high_con.agent.q_func2_loss_record)),
+            ("high_con_average_policy_loss", _mean_or_nan(self.high_con.agent.policy_loss_record)),
+            ("high_con_policy_n_updates", self.high_con.agent.policy_n_updates),
+            ("high_con_q_func_n_updates", self.high_con.agent.q_func_n_updates),
+        ]
 
     def evaluate_policy(self, env, eval_episodes=10, render=False, save_video=False, sleep=-1):
         """
@@ -698,34 +716,34 @@ if __name__ == '__main__':
         )  # NOQA
 
     # other options: AntMaze, AntFall, AntPush
-    env = EnvWithGoal(create_maze_env('AntMaze'), 'AntMaze')
-    # env = pandaPushGymGoalEnv()
-    env_goal_dim = 2
-    env_state_dim = env.state_dim
-    env_action_dim = env.action_dim
+    # env = EnvWithGoal(create_maze_env('AntMaze'), 'AntMaze')
+    # # env = pandaPushGymGoalEnv()
+    # env_goal_dim = 2
+    # env_state_dim = env.state_dim
+    # env_action_dim = env.action_dim
 
-    # for the panda env
-    # env_action_dim = env.action_space.shape[0]
-    # env_state_dim = env.observation_space.spaces['observation'].shape[0]
-    # env_goal_dim = env.observation_space.spaces['desired_goal'].shape[0]
+    # # for the panda env
+    # # env_action_dim = env.action_space.shape[0]
+    # # env_state_dim = env.observation_space.spaces['observation'].shape[0]
+    # # env_goal_dim = env.observation_space.spaces['desired_goal'].shape[0]
 
-    gpu = 0 if torch.cuda.is_available() else None
-    hiro_agent = HIROAgent(state_dim=env_state_dim,
-                           action_dim=env_action_dim,
-                           goal_dim=env_goal_dim,
-                           subgoal_dim=7,
-                           scale_low=1,
-                           start_training_steps=100,
-                           model_save_freq=10,
-                           model_path='model',
-                           buffer_size=200000,
-                           batch_size=100,
-                           buffer_freq=10,
-                           train_freq=10,
-                           reward_scaling=0.1,
-                           policy_freq_high=2,
-                           policy_freq_low=2,
-                           gpu=gpu)
-    # set agent to be in training mode.
-    hiro_agent.set_to_train_()
-    test_e2e(25000, env, hiro_agent)
+    # gpu = 0 if torch.cuda.is_available() else None
+    # hiro_agent = HIROAgent(state_dim=env_state_dim,
+    #                        action_dim=env_action_dim,
+    #                        goal_dim=env_goal_dim,
+    #                        subgoal_dim=7,
+    #                        scale_low=1,
+    #                        start_training_steps=100,
+    #                        model_save_freq=10,
+    #                        model_path='model',
+    #                        buffer_size=200000,
+    #                        batch_size=100,
+    #                        buffer_freq=10,
+    #                        train_freq=10,
+    #                        reward_scaling=0.1,
+    #                        policy_freq_high=2,
+    #                        policy_freq_low=2,
+    #                        gpu=gpu)
+    # # set agent to be in training mode.
+    # hiro_agent.set_to_train_()
+    # test_e2e(25000, env, hiro_agent)

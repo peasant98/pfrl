@@ -5,16 +5,15 @@ import os
 import gym
 import gym.spaces
 import numpy as np
+from pfrl.utils import subgoal
 import torch
 from torch import nn
 from pybullet_robot_envs.envs.panda_envs.panda_env import pandaEnv
 
 import pfrl
-from pfrl.q_functions import DiscreteActionValueHead
-from pfrl import experiments
-from pfrl import explorers
 from pfrl import utils
-from pfrl import replay_buffers
+from pfrl import experiments
+from pfrl.agents.hrl.hiro_agent import HIROAgent
 
 
 class CastAction(gym.ActionWrapper):
@@ -89,37 +88,6 @@ class RecordMovie(gym.Wrapper):
             os.path.join(self._dirname, "{}.mp4".format(self._episode_idx)),
         )
         return obs
-
-
-class GraspingQFunction(nn.Module):
-    """Q-function model for the grasping env.
-
-    This model takes an 84x84 2D image and an integer that indicates the
-    number of elapsed steps in an episode as input and outputs action values.
-    """
-
-    def __init__(self, n_actions, max_episode_steps):
-        super().__init__()
-        self.embed = nn.Embedding(max_episode_steps + 1, 3136)
-        self.image2hidden = nn.Sequential(
-            nn.Conv2d(3, 32, 8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, 4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, 3, stride=1),
-            nn.Flatten(),
-        )
-        self.hidden2out = nn.Sequential(
-            nn.Linear(3136, 512),
-            nn.ReLU(),
-            nn.Linear(512, n_actions),
-            DiscreteActionValueHead(),
-        )
-
-    def forward(self, x):
-        image, steps = x
-        h = self.image2hidden(image) * torch.sigmoid(self.embed(steps))
-        return self.hidden2out(h)
 
 
 def main():
@@ -241,8 +209,6 @@ def main():
     args.outdir = experiments.prepare_output_dir(args, args.outdir)
     print("Output files are saved in {}".format(args.outdir))
 
-    max_episode_steps = 8
-
     def make_panda_env(idx, test):
         from pybullet_robot_envs.envs.panda_envs.panda_push_gym_goal_env import (
             pandaPushGymGoalEnv
@@ -252,8 +218,7 @@ def main():
         process_seed = int(process_seeds[idx])
         env_seed = 2 ** 32 - 1 - process_seed if test else process_seed
         utils.set_random_seed(env_seed)
-        env = pandaPushGymGoalEnv(renders=args.render and (args.demo or not test),
-                                  max_steps=max_episode_steps)
+        env = pandaPushGymGoalEnv(renders=args.render and (args.demo or not test))
 
         env.seed(int(env_seed))
 
@@ -263,47 +228,6 @@ def main():
             os.mkdir(video_dir)
             env = RecordMovie(env, video_dir)
         return env
-
-    def make_env(idx, test):
-        from pybullet_envs.bullet.kuka_diverse_object_gym_env import (
-            KukaDiverseObjectEnv,
-        )  # NOQA
-
-        # Use different random seeds for train and test envs
-        process_seed = int(process_seeds[idx])
-        env_seed = 2 ** 32 - 1 - process_seed if test else process_seed
-        # Set a random seed for this subprocess
-        env = KukaDiverseObjectEnv(
-            isDiscrete=True,
-            renders=args.render and (args.demo or not test),
-            height=84,
-            width=84,
-            maxSteps=max_episode_steps,
-            isTest=test,
-        )
-        # Disable file caching to keep memory usage small
-        env._p.setPhysicsEngineParameter(enableFileCaching=False)
-        assert env.observation_space is None
-        env.observation_space = gym.spaces.Box(
-            low=0, high=255, shape=(84, 84, 3), dtype=np.uint8
-        )
-        # (84, 84, 3) -> (3, 84, 84)
-        env = TransposeObservation(env, (2, 0, 1))
-        env = ObserveElapsedSteps(env, max_episode_steps)
-        # KukaDiverseObjectEnv internally asserts int actions
-        env = CastAction(env, int)
-        env.seed(int(env_seed))
-        if test and args.record:
-            assert args.render, "To use --record, --render needs be specified."
-            video_dir = os.path.join(args.outdir, "video_{}".format(idx))
-            os.mkdir(video_dir)
-            env = RecordMovie(env, video_dir)
-        return env
-
-    def make_batch_env(test):
-        return pfrl.envs.MultiprocessVectorEnv(
-            [functools.partial(make_env, idx, test) for idx in range(args.num_envs)]
-        )
 
     def make_batch_panda_env(test):
         return pfrl.envs.MultiprocessVectorEnv(
@@ -312,54 +236,30 @@ def main():
 
     # eval_env = make_batch_panda_env(test=True)
     eval_env = make_panda_env(0, test=True)
-    n_actions = eval_env.action_space.shape[0]
-    
-    q_func = GraspingQFunction(n_actions, max_episode_steps)
 
-    # Use the hyper parameters of the Nature paper
-    opt = pfrl.optimizers.RMSpropEpsInsideSqrt(
-        q_func.parameters(),
-        lr=args.lr,
-        alpha=0.95,
-        momentum=0.0,
-        eps=1e-2,
-        centered=True,
-    )
+    env_state_dim = eval_env.observation_space.spaces['observation'].shape[0]
+    env_action_dim = eval_env.action_space.shape[0]
+    env_subgoal_dim = 5
+    subgoal_space = gym.spaces.Box(-1, 1, (env_subgoal_dim,))
+    env_goal_dim = eval_env.observation_space['desired_goal'].shape[0]
 
-    # Anneal beta from beta0 to 1 throughout training
-    betasteps = args.steps / args.update_interval
-    rbuf = replay_buffers.PrioritizedReplayBuffer(
-        10 ** 6, alpha=0.6, beta0=0.4, betasteps=betasteps
-    )
-
-    explorer = explorers.LinearDecayEpsilonGreedy(
-        1.0,
-        args.final_epsilon,
-        args.final_exploration_steps,
-        lambda: np.random.randint(n_actions),
-    )
-    # create the agent, in my case.
-
-    def phi(x):
-        # Feature extractor
-        image, elapsed_steps = x
-        # Normalize RGB values: [0, 255] -> [0, 1]
-        norm_image = np.asarray(image, dtype=np.float32) / 255
-        return norm_image, elapsed_steps
-    agent = pfrl.agents.DoubleDQN(
-        q_func,
-        opt,
-        rbuf,
-        gpu=args.gpu,
-        gamma=args.gamma,
-        explorer=explorer,
-        minibatch_size=args.batch_size,
-        replay_start_size=args.replay_start_size,
-        target_update_interval=args.target_update_interval,
-        update_interval=args.update_interval,
-        batch_accumulator="sum",
-        phi=phi,
-    )
+    gpu = 0 if torch.cuda.is_available() else None
+    agent = HIROAgent(state_dim=env_state_dim,
+                      action_dim=env_action_dim,
+                      goal_dim=env_goal_dim,
+                      subgoal_dim=env_subgoal_dim,
+                      scale_low=1,
+                      start_training_steps=100,
+                      model_save_freq=10,
+                      model_path='model',
+                      buffer_size=200000,
+                      batch_size=100,
+                      buffer_freq=10,
+                      train_freq=10,
+                      reward_scaling=0.1,
+                      policy_freq_high=2,
+                      policy_freq_low=2,
+                      gpu=gpu)
 
     if args.load:
         # load weights from agent if arg supplied
@@ -378,18 +278,20 @@ def main():
             )
         )
     else:
-        experiments.train_agent_batch(
+        # train the hierarchical agent.
+        experiments.train_hrl_agent_with_evaluation(
             agent=agent,
-            env=make_batch_env(test=False),
-            eval_env=eval_env,
+            env=make_panda_env(0, test=False),
+            subgoal=subgoal_space,
+            eval_env=make_panda_env(0, test=True),
             steps=args.steps,
             eval_n_steps=None,
             eval_n_episodes=args.eval_n_runs,
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=False,
-            log_interval=1000,
         )
+
 
 if __name__ == "__main__":
     main()
