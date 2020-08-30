@@ -109,11 +109,13 @@ class OC(agent.Agent):
         num_options,
         memory_size=10000,
         gamma=0.99,
+        batch_size=32,
         entropy_reg=0.01,
         termination_reg=0.01
     ):
         self.oc = oc
         self.buffer = OptionCriticReplayBuffer(capacity=memory_size)
+        self.batch_size = batch_size
         self.gamma = gamma
         self.entropy_reg = entropy_reg
         self.termination_reg = termination_reg
@@ -139,11 +141,14 @@ class OC(agent.Agent):
         return action
 
     def observe(self, obs, reward, done, reset):
+        self.buffer.append(self.prev_obs, self.option, reward, obs, done)
         obs = self.to_tensor(obs)
         state = self.oc.get_state(obs)
         self.option_termination = self.oc.predict_option_termination(state, self.option)
 
         actor_loss = self.actor_loss_fn(self.prev_obs, self.option, self.logp, self.entropy, reward, done, obs)
+        if len(self.buffer) >= self.batch_size:
+            critic_loss = self.critic_loss_fn()
         return
 
     def load(self):
@@ -183,3 +188,8 @@ class OC(agent.Agent):
         actor_loss = termination_loss + policy_loss
 
         return actor_loss
+
+    def critic_loss_fn(self):
+        batch = self.buffer.sample(self.batch_size)
+        print(batch["done"])
+        return 0

@@ -25,8 +25,8 @@ def main():
             action = agent.act(observation)
             observation, reward, done, info = env.step(action)
             agent.observe(observation, reward, done, False)
-            if done:
-                break
+            #if done:
+            #    break
         env.close()
 
 if __name__=="__main__":
