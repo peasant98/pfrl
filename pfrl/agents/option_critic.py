@@ -58,12 +58,10 @@ class OptionCriticNetwork(nn.Module):
 
     def predict_option_termination(self, state, current_option):
         """Predict whether option will terminate, return (termination, next option)."""
-        termination = self.terminations(state)[:, current_option].sigmoid()
+        termination = self.terminations(state)[current_option].sigmoid()
         option_termination = Bernoulli(termination).sample()
 
-        Q = self.get_Q(state)
-        next_option = Q.argmax(dim=-1)
-        return bool(option_termination.item()), next_option.item()
+        return bool(option_termination.item())
 
     def get_terminations(self, state):
         """Get termination probabilities."""
@@ -107,9 +105,15 @@ class OC(agent.Agent):
         self,
         oc,
         optimizer,
-        num_options
+        num_options,
+        gamma=0.99,
+        entropy_reg=0.01,
+        termination_reg=0.01
     ):
         self.oc = oc
+        self.gamma = gamma
+        self.entropy_reg = entropy_reg
+        self.termination_reg = termination_reg
         self.oc_prime = deepcopy(oc)
         self.optimizer = optimizer
         self.option = 0
@@ -118,18 +122,25 @@ class OC(agent.Agent):
 
 
     def act(self, obs):
-        obs = np.array(obs)
-        obs = torch.from_numpy(obs).float()
+        obs = self.to_tensor(obs)
+        self.prev_obs = obs
         state = self.oc.get_state(obs)
         if self.option_termination:
             epsilon = self.oc.epsilon
             greedy_option = self.oc.greedy_option(state)
             self.option = np.random.choice(self.num_options) if np.random.rand() < epsilon else greedy_option
         action, logp, entropy = self.oc.get_action(state, self.option)
+        self.logp = logp
+        self.entropy = entropy
 
         return action
 
     def observe(self, obs, reward, done, reset):
+        obs = self.to_tensor(obs)
+        state = self.oc.get_state(obs)
+        self.option_termination = self.oc.predict_option_termination(state, self.option)
+
+        actor_loss = self.actor_loss_fn(self.prev_obs, self.option, self.logp, self.entropy, reward, done, obs)
         return
 
     def load(self):
@@ -141,5 +152,31 @@ class OC(agent.Agent):
     def get_statistics(self):
         return
 
-    def actor_loss_fn(self):
-        return 0
+    def to_tensor(self, arr):
+        arr = np.array(arr)
+        arr = torch.from_numpy(arr).float()
+        return arr
+
+
+    def actor_loss_fn(self, obs, option, logp, entropy, reward, done, next_obs):
+        state = self.oc.get_state(self.to_tensor(obs))
+        next_state = self.oc.get_state(self.to_tensor(next_obs))
+        next_state_prime = self.oc_prime.get_state(self.to_tensor(next_obs))
+
+        option_term_prob = self.oc.get_terminations(state)[option]
+        next_option_term_prob = self.oc.get_terminations(next_state)[option]
+
+        Q = self.oc.get_Q(state).detach().squeeze()
+        next_Q_prime = self.oc_prime.get_Q(next_state_prime).detach().squeeze()
+
+        gt = reward + (1-done) * self.gamma * \
+            ((1-next_option_term_prob) * next_Q_prime[option] + next_option_term_prob * next_Q_prime.max(dim=-1)[0])
+
+        termination_loss = option_term_prob * \
+            (Q[option].detach() - Q.max(dim=-1)[0].detach() + self.termination_reg) * (1-done)
+
+        policy_loss = -logp * (gt.detach() - Q[option]) - self.entropy_reg * entropy
+
+        actor_loss = termination_loss + policy_loss
+
+        return actor_loss
