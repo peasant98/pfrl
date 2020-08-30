@@ -2,8 +2,10 @@
 
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.distributions import Categorical, Bernoulli
 from pfrl import agent
+from copy import deepcopy
 
 class OptionCriticNetwork(nn.Module):
     """Option Critic Network
@@ -15,13 +17,15 @@ class OptionCriticNetwork(nn.Module):
         terminationNetwork (torch.nn.Module): Network to determine termination probs
         QNetwork (torch.nn.Module): Network to calculate Q-Value
         feature_output_size (int): size of feature vector outputted by featureNetwork
+        num_options (int): Number of options used
+        num_actions (int): Number of actions available
         device (string): device to put network on
         eps_start (float): starting epsilon
         eps_min (float): minimum epsilon
         eps_decay (int): decay rate for epsilon
 
     """
-    def __init__(self, featureNetwork, terminationNetwork, QNetwork, feature_output_size, device='cpu',
+    def __init__(self, featureNetwork, terminationNetwork, QNetwork, feature_output_size, num_options, num_actions, device='cpu',
                  eps_start = 1.0, eps_min = 0.1, eps_decay = int(1e6)):
         super(OptionCriticNetwork, self).__init__()
 
@@ -95,11 +99,33 @@ class OC(agent.Agent):
 
     """
 
-    def __init__(self, oc, optimizer):
+    def __init__(
+        self, 
+        oc, 
+        optimizer,
+        num_options
+    ):
         self.oc = oc
+        self.oc_prime = deepcopy(oc)
+        self.optimizer = optimizer
+        self.option = 0
+        self.option_termination = True
+        self.num_options = num_options
+
 
     def act(self, obs):
-        print(obs)
+        obs = np.array(obs)
+        obs = torch.from_numpy(obs).float()
+        state = self.oc.get_state(obs)
+        if self.option_termination:
+            epsilon = self.oc.epsilon
+            greedy_option = self.oc.greedy_option(state)
+            self.option = np.random.choice(self.num_options) if random.rand() < epsilon else 
+        
+        action, logp, entropy = self.oc.get_action(state, self.option)
 
     def observe(self, obs, reward, done, reset):
         print(reward)
+
+    def actor_loss_fn(self):
+        return 0
