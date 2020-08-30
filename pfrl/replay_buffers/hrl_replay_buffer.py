@@ -104,3 +104,41 @@ class HigherControllerReplayBuffer(ReplayBuffer):
         else:
             if len(last_n_transitions) == self.num_steps:
                 self.memory.append(list(last_n_transitions))
+
+class OptionCriticReplayBuffer(ReplayBuffer):
+    """Experience Replay Buffer for Option Critic
+
+    Args:
+        capacity(int): capacity in terms of number of transitions
+        num_steps (int): Number of timesteps per stored transition
+    """
+    def __init__(self, capacity=None, num_steps=1):
+        super().__init__(capacity, num_steps)
+
+    def append(
+        self,
+        observation,
+        option,
+        reward,
+        next_obs,
+        done,
+        env_id=0
+    ):
+        last_n_transitions = self.last_n_transitions[env_id]
+        experience = dict(
+            observation=observation,
+            option=option,
+            reward=reward,
+            next_obs=next_obs,
+            done=done
+        )
+
+        last_n_transitions.append(experience)
+        if done:
+            while last_n_transitions:
+                self.memory.append(list(last_n_transitions))
+                del last_n_transitions[0]
+            assert len(last_n_transitions) == 0
+        else:
+            if len(last_n_transitions) == self.num_steps:
+                self.memory.append(list(last_n_transitions))

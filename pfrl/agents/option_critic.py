@@ -7,6 +7,7 @@ import random
 from math import exp
 from torch.distributions import Categorical, Bernoulli
 from pfrl import agent
+from pfrl.replay_buffers.hrl_replay_buffer import OptionCriticReplayBuffer
 from copy import deepcopy
 
 class OptionCriticNetwork(nn.Module):
@@ -106,11 +107,13 @@ class OC(agent.Agent):
         oc,
         optimizer,
         num_options,
+        memory_size=10000,
         gamma=0.99,
         entropy_reg=0.01,
         termination_reg=0.01
     ):
         self.oc = oc
+        self.buffer = OptionCriticReplayBuffer(capacity=memory_size)
         self.gamma = gamma
         self.entropy_reg = entropy_reg
         self.termination_reg = termination_reg
