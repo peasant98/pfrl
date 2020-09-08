@@ -117,24 +117,24 @@ class OptionCriticReplayBuffer(ReplayBuffer):
 
     def append(
         self,
-        observation,
+        state,
         option,
         reward,
-        next_obs,
-        done,
+        next_state,
+        is_state_terminal,
         env_id=0
     ):
         last_n_transitions = self.last_n_transitions[env_id]
         experience = dict(
-            observation=observation,
+            state=state,
             option=option,
             reward=reward,
-            next_obs=next_obs,
-            done=done
+            next_state=next_state,
+            is_state_terminal=is_state_terminal
         )
 
         last_n_transitions.append(experience)
-        if done:
+        if is_state_terminal:
             while last_n_transitions:
                 self.memory.append(list(last_n_transitions))
                 del last_n_transitions[0]

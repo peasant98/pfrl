@@ -8,6 +8,7 @@ from math import exp
 from torch.distributions import Categorical, Bernoulli
 from pfrl import agent
 from pfrl.replay_buffers.hrl_replay_buffer import OptionCriticReplayBuffer
+from pfrl.replay_buffer import batch_experiences_with_option, ReplayUpdater
 from copy import deepcopy
 
 class OptionCriticNetwork(nn.Module):
@@ -111,10 +112,22 @@ class OC(agent.Agent):
         gamma=0.99,
         batch_size=32,
         entropy_reg=0.01,
-        termination_reg=0.01
+        termination_reg=0.01,
+        device='cpu'
     ):
+        self.device=device
         self.oc = oc
+        self.steps=0
         self.buffer = OptionCriticReplayBuffer(capacity=memory_size)
+        self.updater = ReplayUpdater(
+            self.buffer,
+            self.critic_loss_fn,
+            batch_size,
+            episodic_update=False,
+            n_times_update=1,
+            replay_start_size=batch_size,
+            update_interval=4
+        )
         self.batch_size = batch_size
         self.gamma = gamma
         self.entropy_reg = entropy_reg
@@ -147,8 +160,17 @@ class OC(agent.Agent):
         self.option_termination = self.oc.predict_option_termination(state, self.option)
 
         actor_loss = self.actor_loss_fn(self.prev_obs, self.option, self.logp, self.entropy, reward, done, obs)
-        if len(self.buffer) >= self.batch_size:
-            critic_loss = self.critic_loss_fn()
+        update_status = self.updater.update_if_necessary(self.steps)
+
+        loss = actor_loss
+        if update_status:
+            loss += self.critic_loss
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        self.steps += 1
         return
 
     def load(self):
@@ -189,7 +211,29 @@ class OC(agent.Agent):
 
         return actor_loss
 
-    def critic_loss_fn(self):
-        batch = self.buffer.sample(self.batch_size)
-        print(batch["done"])
-        return 0
+    def critic_loss_fn(self, experiences):
+        batches = batch_experiences_with_option(experiences, self.device, lambda x: x, 1)
+        obs = batches['state']
+        options = batches['option']
+        rewards = batches['reward']
+        next_obs = batches['next_state']
+        dones = batches['is_state_terminal']
+        batch_idx = torch.arange(len(options)).long()
+        masks = 1 - torch.FloatTensor(dones).to(self.device)
+
+        states = self.oc.get_state(self.to_tensor(obs)).squeeze(0)
+        Q = self.oc.get_Q(states)
+
+        next_states_prime = self.oc_prime.get_state(self.to_tensor(next_obs)).squeeze(0)
+        next_Q_prime = self.oc_prime.get_Q(next_states_prime)
+
+        next_states = self.oc.get_state(self.to_tensor(next_obs)).squeeze(0)
+        next_termination_probs = self.oc.get_terminations(next_states).detach()
+        next_options_term_prob = next_termination_probs[batch_idx, options]
+
+        gt = rewards + masks * self.gamma * ((1-next_options_term_prob) * next_Q_prime[batch_idx, options] \
+                                             + next_options_term_prob * next_Q_prime.max(dim=-1)[0])
+
+        td_err = (Q[batch_idx, options] - gt.detach()).pow(2).mul(0.5).mean()
+
+        self.critic_loss = td_err

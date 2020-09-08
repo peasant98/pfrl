@@ -201,6 +201,58 @@ def batch_experiences(experiences, device, phi, gamma, batch_states=batch_states
         )
     return batch_exp
 
+def batch_experiences_with_option(experiences, device, phi, gamma, batch_states=batch_states): 
+    """Takes a batch of k experiences each of which contains j
+
+    consecutive transitions and vectorizes them, where j is between 1 and n.
+
+    Args:
+        experiences: list of experiences. Each experience is a list
+            containing between 1 and n dicts containing
+              - state (object): State
+              - option (int): Option
+              - action (object): Action
+              - reward (float): Reward
+              - is_state_terminal (bool): True iff next state is terminal
+              - next_state (object): Next state
+        device : GPU or CPU the tensor should be placed on
+        phi : Preprocessing function
+        gamma: discount factor
+        batch_states: function that converts a list to a batch
+    Returns:
+        dict of batched transitions
+    """
+    batch_exp = {
+        "state": batch_states([elem[0]["state"] for elem in experiences], device, phi),
+        "option": torch.as_tensor(
+            [elem[0]["option"] for elem in experiences], device=device, dtype=torch.long
+        ),
+        "reward": torch.as_tensor(
+            [
+                sum((gamma ** i) * exp[i]["reward"] for i in range(len(exp)))
+                for exp in experiences
+            ],
+            dtype=torch.float32,
+            device=device,
+        ),
+        "next_state": batch_states(
+            [elem[-1]["next_state"] for elem in experiences], device, phi
+        ),
+        "is_state_terminal": torch.as_tensor(
+            [
+                any(transition["is_state_terminal"] for transition in exp)
+                for exp in experiences
+            ],
+            dtype=torch.float32,
+            device=device,
+        ),
+        "discount": torch.as_tensor(
+            [(gamma ** len(elem)) for elem in experiences],
+            dtype=torch.float32,
+            device=device,
+        ),
+    }
+    return batch_exp
 
 def batch_experiences_with_goal(experiences, device, phi, gamma, batch_states=batch_states):
     """Takes a batch of k experiences each of which contains j
