@@ -23,6 +23,8 @@ from pfrl.nn import ConcatObsAndAction
 from pfrl.nn import BoundByTanh
 from pfrl.policies import DeterministicHead
 
+FETCH_ENVS = ['FetchReach-v1', 'FetchSlide-v1', 'FetchPush-v1', 'FetchPickAndPlace-v1']
+
 
 def main():
 
@@ -61,7 +63,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default=10 ** 6,
+        default=8 * 10 ** 6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -108,6 +110,8 @@ def main():
 
     # Set a random seed used in PFRL
     utils.set_random_seed(args.seed)
+    if args.env not in FETCH_ENVS:
+        raise Exception(f"Invalid environemt, please select from {FETCH_ENVS}")
 
     def make_env(test):
         env = gym.make(args.env)
