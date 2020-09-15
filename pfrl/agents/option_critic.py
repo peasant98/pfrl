@@ -48,7 +48,7 @@ class OptionCriticNetwork(nn.Module):
 
         self.to(device)
 
-    def get_state(self, obs):
+    def convert_to_state(self, obs):
         """Convert state to features."""
         obs = obs.to(self.device)
         state = self.features(obs)
@@ -81,7 +81,7 @@ class OptionCriticNetwork(nn.Module):
 
         return action.item(), logp, entropy
 
-    def greedy_option(self, state):
+    def get_greedy_option(self, state):
         """Get greedy option."""
         Q = self.get_Q(state)
         return Q.argmax(dim=-1).item()
@@ -150,10 +150,10 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
     def act(self, obs):
         obs = self.to_tensor(obs)
         self.prev_obs = obs
-        state = self.oc.get_state(obs)
+        state = self.oc.convert_to_state(obs)
         if self.option_termination:
             epsilon = self.oc.epsilon
-            greedy_option = self.oc.greedy_option(state)
+            greedy_option = self.oc.get_greedy_option(state)
             self.option = np.random.choice(self.num_options) if np.random.rand() < epsilon else greedy_option
         action, logp, entropy = self.oc.get_action(state, self.option)
         self.logp = logp
@@ -164,7 +164,7 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
     def observe(self, obs, reward, done, reset):
         self.buffer.append(self.prev_obs, self.option, reward, obs, done)
         obs = self.to_tensor(obs)
-        state = self.oc.get_state(obs)
+        state = self.oc.convert_to_state(obs)
         self.option_termination = self.oc.predict_option_termination(state, self.option)
 
         actor_loss = self.actor_loss_fn(self.prev_obs, self.option, self.logp, self.entropy, reward, done, obs)
@@ -200,9 +200,9 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
 
 
     def actor_loss_fn(self, obs, option, logp, entropy, reward, done, next_obs):
-        state = self.oc.get_state(self.to_tensor(obs))
-        next_state = self.oc.get_state(self.to_tensor(next_obs))
-        next_state_prime = self.oc_prime.get_state(self.to_tensor(next_obs))
+        state = self.oc.convert_to_state(self.to_tensor(obs))
+        next_state = self.oc.convert_to_state(self.to_tensor(next_obs))
+        next_state_prime = self.oc_prime.convert_to_state(self.to_tensor(next_obs))
 
         option_term_prob = self.oc.get_terminations(state)[option]
         next_option_term_prob = self.oc.get_terminations(next_state)[option]
@@ -236,13 +236,13 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
         batch_idx = torch.arange(len(options)).long()
         masks = 1 - torch.FloatTensor(dones).to(self.device)
 
-        states = self.oc.get_state(self.to_tensor(obs)).squeeze(0)
+        states = self.oc.convert_to_state(self.to_tensor(obs)).squeeze(0)
         Q = self.oc.get_Q(states)
 
-        next_states_prime = self.oc_prime.get_state(self.to_tensor(next_obs)).squeeze(0)
+        next_states_prime = self.oc_prime.convert_to_state(self.to_tensor(next_obs)).squeeze(0)
         next_Q_prime = self.oc_prime.get_Q(next_states_prime)
 
-        next_states = self.oc.get_state(self.to_tensor(next_obs)).squeeze(0)
+        next_states = self.oc.convert_to_state(self.to_tensor(next_obs)).squeeze(0)
         next_termination_probs = self.oc.get_terminations(next_states).detach()
         next_options_term_prob = next_termination_probs[batch_idx, options]
 
