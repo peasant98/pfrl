@@ -94,7 +94,7 @@ class OptionCriticNetwork(nn.Module):
 
         return eps
 
-class OC(agent.Agent):
+class OC(agent.AttributeSavingMixin, agent.Agent):
     """Option Critic Architecture
 
     Args:
@@ -102,6 +102,12 @@ class OC(agent.Agent):
         optimizer (Optimizer): Already set up optimizer
 
     """
+
+    saved_attributes = (
+        "oc",
+        "oc_prime",
+        "optimizer"
+    )
 
     def __init__(
         self,
@@ -111,6 +117,7 @@ class OC(agent.Agent):
         memory_size=10000,
         gamma=0.99,
         batch_size=32,
+        freeze_interval=200,
         entropy_reg=0.01,
         termination_reg=0.01,
         device='cpu'
@@ -130,6 +137,7 @@ class OC(agent.Agent):
         )
         self.batch_size = batch_size
         self.gamma = gamma
+        self.freeze_interval = freeze_interval
         self.entropy_reg = entropy_reg
         self.termination_reg = termination_reg
         self.oc_prime = deepcopy(oc)
@@ -169,6 +177,9 @@ class OC(agent.Agent):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        if self.steps % self.freeze_interval == 0:
+            self.oc_prime.load_state_dict(self.oc.state_dict())
 
         self.steps += 1
         return
