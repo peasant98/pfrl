@@ -29,7 +29,7 @@ class OptionCriticNetwork(nn.Module):
         eps_decay (int): decay rate for epsilon
 
     """
-    def __init__(self, featureNetwork, terminationNetwork, QNetwork, feature_output_size, num_options, num_actions, device='cpu',
+    def __init__(self, featureNetwork, terminationNetwork, QNetwork, feature_output_size, num_options, num_actions, device='cuda',
                  eps_start = 1.0, eps_min = 0.1, eps_decay = int(1e6)):
         super(OptionCriticNetwork, self).__init__()
 
@@ -120,7 +120,7 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
         freeze_interval=200,
         entropy_reg=0.01,
         termination_reg=0.01,
-        device='cpu'
+        device='cuda'
     ):
         self.device=device
         self.oc = oc
@@ -234,15 +234,15 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
         next_obs = batches['next_state']
         dones = batches['is_state_terminal']
         batch_idx = torch.arange(len(options)).long()
-        masks = 1 - torch.FloatTensor(dones).to(self.device)
+        masks = 1 - dones
 
-        states = self.oc.convert_to_state(self.to_tensor(obs)).squeeze(0)
+        states = self.oc.convert_to_state(obs).squeeze(0)
         Q = self.oc.get_Q(states)
 
-        next_states_prime = self.oc_prime.convert_to_state(self.to_tensor(next_obs)).squeeze(0)
+        next_states_prime = self.oc_prime.convert_to_state(next_obs.float()).squeeze(0)
         next_Q_prime = self.oc_prime.get_Q(next_states_prime)
 
-        next_states = self.oc.convert_to_state(self.to_tensor(next_obs)).squeeze(0)
+        next_states = self.oc.convert_to_state(next_obs.float()).squeeze(0)
         next_termination_probs = self.oc.get_terminations(next_states).detach()
         next_options_term_prob = next_termination_probs[batch_idx, options]
 
