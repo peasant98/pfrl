@@ -28,11 +28,17 @@ parser.add_argument('--render', type=bool, default=False, help=('Render training
 def main(args):
     env = gym.make(args.env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    feature_output_size = 32
+    feature_output_size = 64
     state_size = env.observation_space.shape[0]
     num_options = args.num_options
     num_actions = env.action_space.n
-    featureNetwork = nn.Linear(state_size, feature_output_size)
+
+    featureNetwork = nn.Sequential(
+        nn.Linear(state_size, 32),
+        nn.ReLU(),
+        nn.Linear(32, 64),
+        nn.ReLU()
+    )
     QNetwork = nn.Linear(feature_output_size, num_options)
     terminationNetwork = nn.Linear(feature_output_size, num_options)
     network = OptionCriticNetwork(
@@ -78,8 +84,13 @@ def main(args):
                 break
         rewards.append(total_reward)
     env.close()
+    agent.save('./trained')
 
     plt.plot(list(range(1, args.num_eps+1)), rewards)
+    plt.xlabel('Training Episode')
+    plt.ylabel('Total Reward')
+    plt.title('Reward over time for Option Critic')
+    plt.savefig('training_graph.png', bbox_inches='tight')
     plt.show()
 
 if __name__=="__main__":

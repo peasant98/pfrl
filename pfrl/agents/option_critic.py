@@ -184,12 +184,6 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
         self.steps += 1
         return
 
-    def load(self):
-        return
-
-    def save(self):
-        return
-
     def get_statistics(self):
         return
 
