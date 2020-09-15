@@ -210,12 +210,16 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
         Q = self.oc.get_Q(state).detach().squeeze()
         next_Q_prime = self.oc_prime.get_Q(next_state_prime).detach().squeeze()
 
+
+        # Rather than maintaining two Q tables, we can estimate one Q table by calculating the expected target of the other
         gt = reward + (1-done) * self.gamma * \
             ((1-next_option_term_prob) * next_Q_prime[option] + next_option_term_prob * next_Q_prime.max(dim=-1)[0])
 
+        # Theorem 2 (Termination Gradient Theorem)
         termination_loss = option_term_prob * \
             (Q[option].detach() - Q.max(dim=-1)[0].detach() + self.termination_reg) * (1-done)
 
+        # Theorem 1 (Intra-Option Policy Gradient Theorem)
         policy_loss = -logp * (gt.detach() - Q[option]) - self.entropy_reg * entropy
 
         actor_loss = termination_loss + policy_loss
@@ -242,6 +246,8 @@ class OC(agent.AttributeSavingMixin, agent.Agent):
         next_termination_probs = self.oc.get_terminations(next_states).detach()
         next_options_term_prob = next_termination_probs[batch_idx, options]
 
+
+        # Another estimation of the second Q table using the one-step update target
         gt = rewards + masks * self.gamma * ((1-next_options_term_prob) * next_Q_prime[batch_idx, options] \
                                              + next_options_term_prob * next_Q_prime.max(dim=-1)[0])
 
