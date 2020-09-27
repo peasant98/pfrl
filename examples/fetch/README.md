@@ -1,4 +1,7 @@
-Fetch Robotics Envs
+# Fetch Robotics Envs
+
+**Note**: The Fetch Robotics environments are
+goal-conditioned environments.
 
 Current Algorithms used:
 
