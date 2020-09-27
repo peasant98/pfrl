@@ -1,10 +1,10 @@
 """
 Training:
-    python examples/ant/train_hiro_ant.py
+    python examples/ant/train_hiro_fetch.py
 Render Trained:
-    python examples/ant/train_hiro_ant.py --render --demo --load <dir>
+    python examples/ant/train_hiro_fetch.py --render --demo --load <dir>
 Example:
-    python examples/ant/train_hiro_ant.py --render --demo --load results/6900d36edd696e65e1d2ae72dd58796a2d7c19ef-34c626fd-4418a6b0/best
+    python examples/ant/train_hiro_fetch.py --render --demo --load results/6900d36edd696e65e1d2ae72dd58796a2d7c19ef-34c626fd-4418a6b0/best
 """
 import argparse
 import functools
@@ -198,9 +198,11 @@ def main():
     env_subgoal_dim = 5
     limits = np.array([2, 2, 2, 0, 0, 0.3, 0.3, 0.3, 0.3, 0.3])[:env_subgoal_dim]
     subgoal_space = gym.spaces.Box(low=limits*-1, high=limits)
+
     env_state_dim = obs_space_dict.spaces['observation'].low.size
     env_goal_dim = obs_space_dict.spaces['desired_goal'].low.size
     env_action_dim = action_space.low.size
+
     scale_low = action_space.high * np.ones(env_action_dim)
     scale_high = subgoal_space.high * np.ones(env_subgoal_dim)
 

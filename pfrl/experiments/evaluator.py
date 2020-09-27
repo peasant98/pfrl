@@ -117,7 +117,7 @@ def _hrl_run_episodes(
             info = {}
         a = agent.act_low_level(obs, sg)
         obs_dict, r, done, info = env.step(a)
-        # select subgoal for the lower level controller.    
+        # select subgoal for the lower level controller.
         obs = obs_dict['observation']
         n_sg = agent.act_high_level(obs, fg, sg, timestep)
 
