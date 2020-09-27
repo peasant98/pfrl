@@ -31,7 +31,8 @@ class HIROAgent(HRLAgent):
                  reward_scaling,
                  gpu,
                  add_entropy,
-                 start_training_steps=2500):
+                 start_training_steps=2500,
+                 subgoal_space=None):
         """
         Constructor for the HIRO agent.
         """
@@ -68,6 +69,7 @@ class HIROAgent(HRLAgent):
         )
 
         self.subgoal_freq = subgoal_freq
+        self.subgoal_space = subgoal_space
 
         self.train_freq = train_freq
         self.reward_scaling = reward_scaling

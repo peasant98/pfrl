@@ -16,7 +16,6 @@ import gym.spaces
 import numpy as np
 import torch
 
-from hiro_robot_envs.envs import create_maze_env, AntEnvWithGoal
 import pfrl
 from pfrl import utils
 from pfrl import experiments
@@ -140,6 +139,9 @@ def parse_rl_args():
         default=False,
         help="Record videos of evaluation envs. --render should also be specified.",
     )
+    parser.add_argument(
+        "--monitor", action="store_true", help="Wrap env with gym.wrappers.Monitor."
+    )
     args = parser.parse_args()
     return args
 
@@ -148,6 +150,9 @@ def main():
     args = parse_rl_args()
 
     logging.basicConfig(level=args.log_level)
+
+    if args.env not in FETCH_ENVS:
+        raise Exception(f"Invalid environemt, please select from {FETCH_ENVS}")
 
     # Set a random seed used in PFRL.
     utils.set_random_seed(args.seed)
@@ -189,10 +194,10 @@ def main():
     print("Observation space dictionary:", obs_space_dict)
     print("Action space:", action_space)
 
-    env_subgoal_dim = env.subgoal_dim
-
-    subgoal_space = env.subgoal_space
-
+    # size of the subgoal is a hyperparameter
+    env_subgoal_dim = 5
+    limits = np.array([2, 2, 2, 0, 0, 0.3, 0.3, 0.3, 0.3, 0.3])[:env_subgoal_dim]
+    subgoal_space = gym.spaces.Box(low=limits*-1, high=limits)
     env_state_dim = obs_space_dict.spaces['observation'].low.size
     env_goal_dim = obs_space_dict.spaces['desired_goal'].low.size
     env_action_dim = action_space.low.size
@@ -221,7 +226,8 @@ def main():
                       train_freq=10,
                       reward_scaling=0.1,
                       gpu=gpu,
-                      add_entropy=args.add_entropy)
+                      add_entropy=args.add_entropy,
+                      subgoal_space=subgoal_space)
 
     if args.load:
         # load weights from a file if arg supplied
@@ -244,13 +250,14 @@ def main():
 
         experiments.train_hrl_agent_with_evaluation(
             agent=agent,
-            env=make_env(0, test=False),
+            env=make_env(test=False),
             steps=args.steps,
             outdir=args.outdir,
             eval_n_steps=None,
             eval_interval=5000,
             eval_n_episodes=10,
-            use_tensorboard=True
+            use_tensorboard=True,
+            train_max_episode_len=timestep_limit,
         )
 
 

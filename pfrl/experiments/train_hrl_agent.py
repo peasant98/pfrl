@@ -29,9 +29,11 @@ def train_hrl_agent(
 
     fg = obs_dict['desired_goal']
     obs = obs_dict['observation']
-
     # sample from subgoal
-    sg = env.subgoal_space.sample()
+    if agent.subgoal_space is not None:
+        sg = agent.subgoal_space.sample()
+    else:
+        sg = env.subgoal_space.sample()
 
     t = step_offset
     step = 0
@@ -48,7 +50,6 @@ def train_hrl_agent(
             obs_dict, r, done, info = env.step(action)
             # env.render()
             obs = obs_dict['observation']
-
             n_sg = agent.act_high_level(obs, fg, sg, step, t)
 
             episode_r += r
@@ -124,7 +125,7 @@ def train_hrl_agent_with_evaluation(
     step_hooks=(),
     save_best_so_far_agent=True,
     use_tensorboard=False,
-    logger=None
+    logger=None,
 ):
     """Train an HRL (hierarchical reinforcement
     learning) agent while periodically evaluating it.

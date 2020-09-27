@@ -107,7 +107,10 @@ def _hrl_run_episodes(
             obs_dict = env.reset()
             fg = obs_dict['desired_goal']
             obs = obs_dict['observation']
-            sg = env.subgoal_space.sample()
+            if agent.subgoal_space is not None:
+                sg = agent.subgoal_space.sample()
+            else:
+                sg = env.subgoal_space.sample()
             done = False
             test_r = 0
             episode_len = 0
@@ -128,13 +131,25 @@ def _hrl_run_episodes(
             logger.info(
                 "evaluation episode %s length:%s R:%s", len(scores), episode_len, test_r
             )
-            error = np.sqrt(np.sum(np.square(fg-obs[:2])))
-            print('Goal, Curr: (%02.2f, %02.2f, %02.2f, %02.2f)     Error:%.2f'%(fg[0], fg[1], obs[0], obs[1], error))
-            successes += 1 if error <=5 else 0
-            trials += 1
-            # success rate
-            success_rate = successes / trials
-            logger.info(f"Success Rate: {success_rate}")
+            if 'compute_reward' in dir(env):
+                # use compute reward function, in this case
+                ag = obs_dict['achieved_goal']
+                dg = obs_dict['desired_goal']
+                reward = env.compute_reward(ag, dg, None)
+                print(f'Desired goal: {dg}, achieved goal: {ag}, reward: {reward}')
+                successes += 1 if reward == 0 else 0
+                trials += 1
+                # success rate
+                success_rate = successes / trials
+                logger.info(f"Success Rate: {success_rate}")
+            else:
+                error = np.sqrt(np.sum(np.square(fg-obs[:2])))
+                print('Goal, Curr: (%02.2f, %02.2f, %02.2f, %02.2f)     Error:%.2f'%(fg[0], fg[1], obs[0], obs[1], error))
+                successes += 1 if error <=5 else 0
+                trials += 1
+                # success rate
+                success_rate = successes / trials
+                logger.info(f"Success Rate: {success_rate}")
             # As mixing float and numpy float causes errors in statistics
             # functions, here every score is cast to float.
             scores.append(float(test_r))
