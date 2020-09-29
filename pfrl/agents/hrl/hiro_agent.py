@@ -32,7 +32,8 @@ class HIROAgent(HRLAgent):
                  gpu,
                  add_entropy,
                  start_training_steps=2500,
-                 subgoal_space=None):
+                 subgoal_space=None,
+                 use_her=False):
         """
         Constructor for the HIRO agent.
         """
@@ -71,6 +72,8 @@ class HIROAgent(HRLAgent):
         self.subgoal_freq = subgoal_freq
         self.subgoal_space = subgoal_space
 
+        self.use_her = use_her
+        self.her_transitions = {}
         self.train_freq = train_freq
         self.reward_scaling = reward_scaling
         self.start_training_steps = start_training_steps
@@ -115,6 +118,20 @@ class HIROAgent(HRLAgent):
         and train both the low and high level controllers.
         """
         if self.training:
+            if self.use_her:
+                transition = {
+                    'state': self.last_obs,
+                    'goal': self.last_subgoal,
+                    'action': self.last_action,
+                    'reward': self.sr,
+                    'next_state': obs,
+                    'next_goal': subgoal,
+                    'is_state_terminal': done,
+                    'env_id': None
+                }
+                self.her_transitions.append(transition)
+                # add to transitions for each episode
+
             # start training once the global step surpasses
             # the start training steps
             self.low_con.observe(obs, subgoal, self.sr, done)
@@ -141,6 +158,7 @@ class HIROAgent(HRLAgent):
     def end_episode(self):
         self.action_arr = []
         self.state_arr = []
+        self.her_transitions = []
         self.last_high_level_obs = None
         self.last_high_level_goal = None
         self.last_high_level_action = None
