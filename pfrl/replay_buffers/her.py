@@ -3,6 +3,10 @@ Hindsight Experience Replay.
 """
 
 
+def standard_goal_sampling_fnc(final_goal, achieved_goal):
+    return achieved_goal
+
+
 class HERModule():
     def __init__(self):
         pass
@@ -13,7 +17,7 @@ class GoalConditionedHERModule():
     explicitly goal conditioned (concatenation is taken care of elsewhere)
     HER.
     """
-    def __init__(self, goal_sampling_fnc, recompute_reward_fnc, replay_buffer):
+    def __init__(self, recompute_reward_fnc, replay_buffer, goal_sampling_fnc=standard_goal_sampling_fnc, ):
         self.goal_sampling_fnc = goal_sampling_fnc
         self.recompute_reward_fnc = recompute_reward_fnc
         self.replay_buffer = replay_buffer
