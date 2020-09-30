@@ -127,7 +127,7 @@ class HIROAgent(HRLAgent):
                     'next_state': obs,
                     'next_goal': subgoal,
                     'is_state_terminal': done,
-                    'env_id': None
+                    'env_id': 0
                 }
                 self.her_transitions.append(transition)
                 # add to transitions for each episode
