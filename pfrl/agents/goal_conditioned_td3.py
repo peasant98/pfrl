@@ -95,7 +95,8 @@ class GoalConditionedTD3(TD3, GoalConditionedBatchAgent):
         policy_update_delay=2,
         buffer_freq=10,
         target_policy_smoothing_func=default_target_policy_smoothing_func,
-        add_entropy=False
+        add_entropy=False,
+        use_her=False
     ):
         self.buffer_freq = buffer_freq
         self.minibatch_size = minibatch_size
